@@ -20,6 +20,7 @@ export default tseslint.config({
     ...tseslint.configs.strictTypeChecked,
     // Optionally, add this for stylistic rules
     ...tseslint.configs.stylisticTypeChecked,
+    
   ],
   languageOptions: {
     // other options...
@@ -53,4 +54,5 @@ export default tseslint.config({
 })
 ```
 # cowdroycalculator
+
 
