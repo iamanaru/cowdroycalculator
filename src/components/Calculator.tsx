@@ -56,6 +56,9 @@ interface CalculatorState {
   bracedSide: string;
   floorType: string;
   cutItems: { [key: string]: boolean };
+  packingSlip: string;
+  orderNumber: string;
+  customerName: string;
 }
 
 interface CutListItem {
@@ -93,12 +96,17 @@ export default function Calculator() {
     bracedSide: 'left',
     floorType: 'Concrete',
     cutItems: {},
+    packingSlip: '',
+    orderNumber: '',
+    customerName: '',
   } as const;
 
   const [state, setState] = useState<CalculatorState>(defaultState);
 
   // Add state for preview collapse
-  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(false);
+  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(true);
+
+  console.log('Calculator state:', state);
 
   // Handle Square Stop changes
   useEffect(() => {
@@ -110,23 +118,125 @@ export default function Calculator() {
     }
   }, [state.squareStop]);
 
-  // Handle Light Duty conditions
+  // Handle Light Duty for Grooved Pine, Triumph, and doorHeight < 2100
   useEffect(() => {
-    if (state.frontstayOption === 'Light Duty' && 
-        (state.jambType !== 'Grooved Pine' || state.doorHeight > 1980)) {
+    if (state.jambType === 'Grooved Pine' && state.trackType === 'Triumph' && state.doorHeight < 2100) {
       setState(prev => ({
         ...prev,
-        frontstayOption: 'Heavy Duty'
+        frontstayOption: 'Light Duty',
+      }));
+    } else if (state.jambType === 'Grooved Pine' && state.trackType === 'Triumph' && state.doorHeight >= 2100) {
+      setState(prev => (
+        prev.frontstayOption === 'Light Duty'
+          ? { ...prev, frontstayOption: 'Heavy Duty' }
+          : prev
+      ));
+    } else if (state.jambType !== 'Grooved Pine' && state.frontstayOption === 'Light Duty') {
+      setState(prev => ({
+        ...prev,
+        frontstayOption: 'Heavy Duty',
       }));
     }
-  }, [state.jambType, state.doorHeight]);
+  }, [state.jambType, state.trackType, state.doorHeight]);
 
-  const handleChange = (event: SelectChangeEvent | React.ChangeEvent<HTMLInputElement>) => {
+  // New useEffect for Ultra track, Single cavity, 90mm stud, and Grooved Pine jamb
+  useEffect(() => {
+    if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Triumph' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.doorHeight < 2100
+    ) {
+      setState(prev => ({
+        ...prev,
+        frontstayOption: 'Light Duty',
+      }));
+    } else if (
+      state.frontstayOption === 'Light Duty' &&
+      (
+        state.jambType !== 'Grooved Pine' ||
+        state.trackType !== 'Triumph' ||
+        state.cavityType !== 'Single' ||
+        state.studSize !== '90mm' ||
+        state.doorHeight >= 2100
+      )
+    ) {
+      setState(prev => ({
+        ...prev,
+        frontstayOption: 'Heavy Duty',
+      }));
+    }
+  }, [state.jambType, state.trackType, state.cavityType, state.studSize, state.doorHeight]);
+
+  useEffect(() => {
+    if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Ultra' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.straightline &&
+      state.doorHeight < 2100
+    ) {
+      setState(prev => ({
+        ...prev,
+        frontstayOption: 'Light Duty',
+      }));
+    } else if (
+      state.frontstayOption === 'Light Duty' &&
+      (
+        state.jambType !== 'Grooved Pine' ||
+        state.trackType !== 'Ultra' ||
+        state.cavityType !== 'Single' ||
+        state.studSize !== '90mm' ||
+        !state.straightline ||
+        state.doorHeight >= 2100
+      )
+    ) {
+      setState(prev => ({
+        ...prev,
+        frontstayOption: 'Heavy Duty',
+      }));
+    }
+  }, [state.jambType, state.trackType, state.cavityType, state.studSize, state.straightline, state.doorHeight]);
+
+  const handleSelectChange = (event: SelectChangeEvent) => {
+    const { name, value } = event.target;
+
+    setState(prev => {
+      let newState: Partial<CalculatorState> = {
+        ...prev,
+        [name]: value,
+      };
+
+      // Special handling for jambType
+      if (name === 'jambType') {
+        newState.squareStop = value === 'Square Stop';
+        if (value === 'Square Stop') {
+          newState.frontstayOption = 'Un-Finned Stabiline';
+        } else if (prev.squareStop) {
+          // If moving away from Square Stop, revert to Heavy Duty unless logic elsewhere overrides
+          newState.frontstayOption = 'Heavy Duty';
+        }
+      }
+
+      // Height/width logic
+      if (name === 'heightValue') {
+        newState.doorHeight = prev.heightCalculationMethod === 'doorHeight' ? parseInt(value) || 0 : prev.doorHeight;
+      }
+      if (name === 'widthValue') {
+        newState.doorWidth = prev.widthCalculationMethod === 'doorWidth' ? parseInt(value) || 0 : prev.doorWidth;
+      }
+
+      return { ...prev, ...newState };
+    });
+  };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
     setState(prev => ({
       ...prev,
       [name]: value,
-      // Update doorHeight or doorWidth when their respective values change
       ...(name === 'heightValue' && {
         doorHeight: prev.heightCalculationMethod === 'doorHeight' ? parseInt(value) || 0 : prev.doorHeight,
       }),
@@ -212,7 +322,7 @@ export default function Calculator() {
             Quick Select Width (mm):
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {[610, 660, 710, 760, 810, 860, 910, 960, 1000, 1100, 1200].map((width) => (
+            {[610, 660, 710, 760, 810, 860, 910, 960, 1000, 1100, 1200, 1300].map((width) => (
               <Button
                 key={width}
                 onClick={() => handleQuickSelect(width, 'width')}
@@ -267,12 +377,49 @@ export default function Calculator() {
     const baseQuantity = state.cavityType === 'Single' ? 2 : 4;
 
     // Calculate length based on frontstay type
+    let frontstayLength;
+    let frontstayName = state.frontstayOption;
+    if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.straightline &&
+      state.jambType === 'Grooved Pine' &&
+      state.studSize === '90mm' &&
+      state.doorHeight < 2100
+    ) {
+      frontstayName = 'Light Duty';
+      frontstayLength = state.doorHeight + state.floorClearance + 21;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      frontstayLength = state.doorHeight + state.floorClearance + 16;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Grooved Pine' &&
+      state.studSize === '90mm'
+    ) {
+      frontstayLength = state.doorHeight + state.floorClearance + 16;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      frontstayLength = state.doorHeight + state.floorClearance + 21;
+    } else {
     const isStabiline = state.frontstayOption === 'Finned Stabiline' || 
                        state.frontstayOption === 'Un-Finned Stabiline';
-    const frontstayLength = state.doorHeight + state.floorClearance + (isStabiline ? 9 : 10);
+      frontstayLength = state.doorHeight + state.floorClearance + (isStabiline ? 9 : 10);
+    }
 
     return {
-      description: `${state.frontstayOption} Aluminium Frontstay`,
+      description: `${frontstayName} Aluminium Frontstay`,
       quantity: baseQuantity * state.quantity, // Multiply by the overall quantity
       length: frontstayLength,
       width: 0, // Not applicable for frontstays
@@ -286,9 +433,43 @@ export default function Calculator() {
       return null;
     }
 
-    // Calculate length based on track type
+    // Calculate length based on track type and special case
+    let jambLength;
+    if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Ultra' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.straightline
+    ) {
+      jambLength = state.doorHeight + state.floorClearance + 42;
+    } else if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Triumph' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.doorHeight < 2100
+    ) {
+      jambLength = state.doorHeight + state.floorClearance + 26;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      jambLength = state.doorHeight + state.floorClearance + 26;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      jambLength = state.doorHeight + state.floorClearance + 42;
+    } else {
     const lengthAddition = state.trackType === 'Triumph' ? 40 : 53;
-    const jambLength = state.doorHeight + state.floorClearance + lengthAddition;
+      jambLength = state.doorHeight + state.floorClearance + lengthAddition;
+    }
 
     // One Piece Closing Jamb conditions:
     // - Stud size must be 90mm AND
@@ -332,8 +513,22 @@ export default function Calculator() {
           width = 28;
           thickness = 21;
         } else if (state.jambType === 'Grooved Pine') {
+          if (
+            state.cavityType === 'Single' &&
+            state.studSize === '90mm'
+          ) {
+            width = 30;
+            thickness = 3;
+          } else if (
+            state.cavityType === 'Single' &&
+            state.studSize === '140mm'
+          ) {
+            width = 76;
+            thickness = 18;
+          } else {
           width = 30;
           thickness = 51;
+          }
         }
       } else if (isTriumph) {
         // Triumph track with straightline
@@ -354,8 +549,14 @@ export default function Calculator() {
     const totalQuantity = baseQuantity * state.quantity;
 
     // Calculate length based on jamb type
-    const baseLength = state.doorWidth * 2;
-    const length = state.jambType === 'Flat Pine' ? baseLength - 10 : baseLength;
+    let length;
+    if (isTriumph && state.jambType === 'Grooved Pine') {
+      length = state.doorWidth * 2;
+    } else if (state.jambType === 'Flat Pine') {
+      length = state.doorWidth * 2 - 10;
+    } else {
+      length = state.doorWidth * 2;
+    }
 
     return {
       description,
@@ -377,9 +578,32 @@ export default function Calculator() {
     const totalQuantity = baseQuantity * state.quantity;
 
     // Calculate length based on cavity type
-    const length = state.cavityType === 'Single' 
+    let length;
+    if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.straightline &&
+      state.jambType === 'Grooved Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorWidth * 2 + 10;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorWidth * 2;
+    } else if (state.trackType === 'Triumph') {
+      length = state.cavityType === 'Single'
+        ? state.doorWidth * 2 + 10
+        : state.doorWidth * 2;
+    } else {
+      length = state.cavityType === 'Single'
       ? state.doorWidth * 2 
       : state.doorWidth * 2 - 10;
+    }
 
     return {
       description,
@@ -398,9 +622,43 @@ export default function Calculator() {
     const baseQuantity = state.cavityType === 'Single' ? 1 : 2;
     const totalQuantity = baseQuantity * state.quantity;
 
-    // Calculate length based on track type
+    // Calculate length based on track type and special case
+    let length;
+    if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Ultra' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.straightline
+    ) {
+      length = state.doorHeight + state.floorClearance + 42;
+    } else if (
+      state.jambType === 'Grooved Pine' &&
+      state.trackType === 'Triumph' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.doorHeight < 2100
+    ) {
+      length = state.doorHeight + state.floorClearance + 26;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorHeight + state.floorClearance + 26;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorHeight + state.floorClearance + 42;
+    } else {
     const lengthAddition = state.trackType === 'Triumph' ? 40 : 53;
-    const length = state.doorHeight + state.floorClearance + lengthAddition;
+      length = state.doorHeight + state.floorClearance + lengthAddition;
+    }
 
     return {
       description: `${width}mm Aluminium Backstay`,
@@ -446,18 +704,42 @@ export default function Calculator() {
     const baseQuantity = state.cavityType === 'Single' ? 2 : 4;
     const totalQuantity = baseQuantity * state.quantity;
 
-    // Calculate length based on jamb type and stabiline usage
+    // Calculate length based on special case or jamb type and stabiline usage
+    let length;
+    if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorHeight + state.floorClearance - 2;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.straightline &&
+      state.jambType === 'Grooved Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorHeight + state.floorClearance + 2;
+    } else if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Ultra' &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorHeight + state.floorClearance + 3;
+    } else {
     const isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || 
                            state.frontstayOption === 'Un-Finned Stabiline';
-    
     let lengthAddition;
     if (isFlatPine) {
       lengthAddition = isStabilineUsed ? 9 : 10;
     } else {
       lengthAddition = isStabilineUsed ? 23 : 20;
+      }
+      length = state.doorHeight + state.floorClearance + lengthAddition;
     }
-    
-    const length = state.doorHeight + state.floorClearance + lengthAddition;
 
     return {
       description,
@@ -469,8 +751,37 @@ export default function Calculator() {
   };
 
   const calculateHeadJamb = (): CutListItem | null => {
-    // If straightline with Triumph track and Grooved Pine, no head jamb is required
-    if (state.straightline && state.trackType === 'Triumph' && state.jambType === 'Grooved Pine') {
+    console.log('calculateHeadJamb state:', {
+      cavityType: state.cavityType,
+      studSize: state.studSize,
+      trackType: state.trackType,
+      jambType: state.jambType,
+      straightline: state.straightline,
+      doorWidth: state.doorWidth,
+      doorHeight: state.doorHeight
+    });
+
+    // Special case for Single, Grooved Pine, Straightline, 140mm stud
+    if (
+      state.cavityType === 'Single' &&
+      state.jambType === 'Grooved Pine' &&
+      state.straightline &&
+      state.studSize === '140mm'
+    ) {
+      const result = {
+        description: '76mm x 18mm Grooved Pine Head Jamb <span style="font-weight: bold; font-size: 1.1em;">⊗SL</span>',
+        quantity: 2 * state.quantity,
+        length: state.doorWidth + 30,
+        width: 76,
+        thickness: 18
+      };
+      console.log('calculateHeadJamb: returning 76x18 for Single/Grooved/Straightline/140mm');
+      return result;
+    }
+
+    // If straightline with Triumph track and Grooved Pine (except 140mm stud case), no head jamb is required
+    if (state.straightline && state.trackType === 'Triumph' && state.jambType === 'Grooved Pine' && state.studSize !== '140mm') {
+      console.log('calculateHeadJamb: returning null (Triumph + Grooved Pine + Straightline)');
       return null;
     }
 
@@ -479,23 +790,35 @@ export default function Calculator() {
     let thickness = 18;  // Default thickness
     
     if (state.straightline) {
+      console.log('calculateHeadJamb: straightline is true');
       if (state.trackType === 'Triumph') {
+        console.log('calculateHeadJamb: Triumph track');
         // Triumph track with straightline
         if (state.jambType === 'Flat Pine') {
-          width = 13;
-          thickness = 41;
+          width = 40;
+          thickness = 13;
         }
       } else if (state.trackType === 'Ultra') {
+        console.log('calculateHeadJamb: Ultra track');
         // Ultra track with straightline
         if (state.jambType === 'Flat Pine') {
           width = 21;
           thickness = 28;
         } else if (state.jambType === 'Grooved Pine') {
-          width = 30;
-          thickness = 51;
+          if (
+            state.cavityType === 'Single' &&
+            state.studSize === '140mm'
+          ) {
+            width = 76;
+            thickness = 18;
+          } else {
+            width = 30;
+            thickness = 51;
+          }
         }
       }
     } else {
+      console.log('calculateHeadJamb: straightline is false');
       // Non-straightline dimensions
       const isFlatPine = state.jambType === 'Flat Pine';
       width = isFlatPine ? 32 : 44;
@@ -509,13 +832,43 @@ export default function Calculator() {
     const totalQuantity = baseQuantity * state.quantity;
 
     // Calculate length based on jamb type, cavity type, and stabiline usage
-    const isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || 
-                           state.frontstayOption === 'Un-Finned Stabiline';
-    
     let length;
-    if (state.jambType === 'Flat Pine') {
+    let isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || state.frontstayOption === 'Un-Finned Stabiline';
+    if (
+      state.cavityType === 'Single' &&
+      state.trackType === 'Triumph' &&
+      state.straightline &&
+      state.jambType === 'Flat Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorWidth - 2;
+    } else if (
+      state.trackType === 'Ultra' &&
+      state.cavityType === 'Single' &&
+      state.straightline &&
+      state.jambType === 'Grooved Pine' &&
+      state.studSize === '90mm'
+    ) {
+      length = state.doorWidth + 66;
+    } else if (
+      state.trackType === 'Ultra' &&
+      state.cavityType === 'Single' &&
+      state.studSize === '90mm' &&
+      state.jambType === 'Flat Pine'
+    ) {
+      length = state.doorWidth - 2;
+    } else if (state.jambType === 'Flat Pine') {
       if (state.cavityType === 'Single') {
-        length = isStabilineUsed ? state.doorWidth - 28 : state.doorWidth - 30;
+        // Special case for 32mm x 18mm Flat Pine Head Jamb: always subtract 28mm
+        if (
+          !state.straightline &&
+          state.jambType === 'Flat Pine' &&
+          state.cavityType === 'Single'
+        ) {
+          length = state.doorWidth - 28;
+        } else {
+          length = isStabilineUsed ? state.doorWidth - 28 : state.doorWidth - 30;
+        }
       } else {
         length = state.doorWidth * 2 - 40; // Same for both stabiline and non-stabiline
       }
@@ -527,13 +880,15 @@ export default function Calculator() {
       }
     }
 
-    return {
+    const result = {
       description,
       quantity: totalQuantity,
       length,
       width,
       thickness
     };
+    console.log('calculateHeadJamb result:', result);
+    return result;
   };
 
   const calculateCutList = (): CutListItem[] => {
@@ -645,14 +1000,40 @@ export default function Calculator() {
 
   const getLengthFormula = (item: CutListItem): string => {
     if (item.description.includes('Frontstay')) {
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.straightline &&
+        state.jambType === 'Grooved Pine' &&
+        state.studSize === '90mm' &&
+        state.doorHeight < 2100
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 21mm`;
+      }
+      if (
+        (state.cavityType === 'Single' &&
+         state.trackType === 'Triumph' &&
+         state.straightline &&
+         state.studSize === '90mm' &&
+         (state.jambType === 'Flat Pine' || state.jambType === 'Grooved Pine'))
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 16mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 21mm`;
+      }
       const isStabiline = state.frontstayOption === 'Finned Stabiline' || state.frontstayOption === 'Un-Finned Stabiline';
       return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + ${isStabiline ? '9mm' : '10mm'}`;
     }
-    if (item.description.includes('Closing Jamb')) {
-      const lengthAddition = state.trackType === 'Triumph' ? 40 : 53;
-      return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + ${lengthAddition}mm`;
-    }
     if (item.description.includes('Head Timber')) {
+      if (state.trackType === 'Triumph' && state.jambType === 'Grooved Pine') {
+        return `(Door Width (${state.doorWidth}mm) * 2)`;
+      }
       const baseLength = state.doorWidth * 2;
       return state.jambType === 'Flat Pine' ? `(Door Width (${state.doorWidth}mm) * 2) - 10mm` : `Door Width (${state.doorWidth}mm) * 2`;
     }
@@ -660,12 +1041,75 @@ export default function Calculator() {
       const isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || state.frontstayOption === 'Un-Finned Stabiline';
       return `Door Width (${state.doorWidth}mm) - ${isStabilineUsed ? '49mm' : '10mm'}`;
     }
+    if (item.description === 'Triumph Aluminium Head Track') {
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Triumph' &&
+        state.straightline &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `(Door Width (${state.doorWidth}mm) * 2)`;
+      }
+      return state.cavityType === 'Single'
+        ? `(Door Width (${state.doorWidth}mm) * 2) + 10mm`
+        : `(Door Width (${state.doorWidth}mm) * 2)`;
+    }
+    if (item.description === 'Ultra Aluminium Head Track') {
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.straightline &&
+        state.jambType === 'Grooved Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `(Door Width (${state.doorWidth}mm) * 2) + 10mm`;
+      }
+      return state.cavityType === 'Single'
+        ? `(Door Width (${state.doorWidth}mm) * 2)`
+        : `(Door Width (${state.doorWidth}mm) * 2) - 10mm`;
+    }
     if (item.description.includes('Head Track')) {
       return state.cavityType === 'Single' 
         ? `Door Width (${state.doorWidth}mm) * 2`
         : `(Door Width (${state.doorWidth}mm) * 2) - 10mm`;
     }
     if (item.description.includes('Backstay')) {
+      if (
+        state.jambType === 'Grooved Pine' &&
+        state.trackType === 'Ultra' &&
+        state.cavityType === 'Single' &&
+        state.studSize === '90mm' &&
+        state.straightline
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 42mm`;
+      }
+      if (
+        state.jambType === 'Grooved Pine' &&
+        state.trackType === 'Triumph' &&
+        state.cavityType === 'Single' &&
+        state.studSize === '90mm' &&
+        state.doorHeight < 2100
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 26mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Triumph' &&
+        state.straightline &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 26mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 42mm`;
+      }
       const lengthAddition = state.trackType === 'Triumph' ? 40 : 53;
       return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + ${lengthAddition}mm`;
     }
@@ -676,6 +1120,32 @@ export default function Calculator() {
         : `Door Width (${state.doorWidth}mm) - 7mm`;
     }
     if (item.description.includes('Vertical Jambs')) {
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Triumph' &&
+        state.straightline &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) - 2mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.straightline &&
+        state.jambType === 'Grooved Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 2mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 3mm`;
+      }
       const isFlatPine = state.jambType === 'Flat Pine';
       const isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || state.frontstayOption === 'Un-Finned Stabiline';
       const addition = isFlatPine 
@@ -684,9 +1154,38 @@ export default function Calculator() {
       return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + ${addition}mm`;
     }
     if (item.description.includes('Head Jamb')) {
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Triumph' &&
+        state.straightline &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Width (${state.doorWidth}mm) - 2mm`;
+      }
+      if (
+        state.trackType === 'Ultra' &&
+        state.cavityType === 'Single' &&
+        state.straightline &&
+        state.jambType === 'Grooved Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Width (${state.doorWidth}mm) + 66mm`;
+      }
+      if (
+        state.trackType === 'Ultra' &&
+        state.cavityType === 'Single' &&
+        state.studSize === '90mm' &&
+        state.jambType === 'Flat Pine'
+      ) {
+        return `Door Width (${state.doorWidth}mm) - 2mm`;
+      }
       const isFlatPine = state.jambType === 'Flat Pine';
       const isStabilineUsed = state.frontstayOption === 'Finned Stabiline' || state.frontstayOption === 'Un-Finned Stabiline';
-      
+      // Special case for 32mm x 18mm Flat Pine Head Jamb
+      if (item.description.startsWith('32mm x 18mm Flat Pine Head Jamb')) {
+        return 'Door Width (' + state.doorWidth + 'mm) - 28mm';
+      }
       if (isFlatPine) {
         if (state.cavityType === 'Single') {
           return isStabilineUsed 
@@ -703,6 +1202,45 @@ export default function Calculator() {
         }
       }
     }
+    if (item.description.includes('Closing Jamb')) {
+      if (
+        state.jambType === 'Grooved Pine' &&
+        state.trackType === 'Ultra' &&
+        state.cavityType === 'Single' &&
+        state.studSize === '90mm' &&
+        state.straightline
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 42mm`;
+      }
+      if (
+        state.jambType === 'Grooved Pine' &&
+        state.trackType === 'Triumph' &&
+        state.cavityType === 'Single' &&
+        state.studSize === '90mm' &&
+        state.doorHeight < 2100
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 26mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Triumph' &&
+        state.straightline &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 26mm`;
+      }
+      if (
+        state.cavityType === 'Single' &&
+        state.trackType === 'Ultra' &&
+        state.jambType === 'Flat Pine' &&
+        state.studSize === '90mm'
+      ) {
+        return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + 42mm`;
+      }
+      const lengthAddition = state.trackType === 'Triumph' ? 40 : 53;
+      return `Door Height (${state.doorHeight}mm) + Floor Clearance (${state.floorClearance}mm) + ${lengthAddition}mm`;
+    }
     return '';
   };
 
@@ -717,9 +1255,8 @@ export default function Calculator() {
     );
     
     const cavityPocketItems = cutList.filter(item => 
-      !item.description.includes('Head Track') && 
-      !item.description.includes('Head Timber') &&
-      !item.description.includes('Head Jamb')
+      !item.description.includes('Head') && 
+      !item.description.includes('Timber')
     );
 
     // Further separate each category into timber and aluminium
@@ -757,15 +1294,13 @@ export default function Calculator() {
                 <TableCell>Description</TableCell>
                 <TableCell align="right">Quantity</TableCell>
                 <TableCell align="right">Length (mm)</TableCell>
-                <TableCell align="right">Width (mm)</TableCell>
-                <TableCell align="right">Thickness (mm)</TableCell>
                 <TableCell align="right">Cut</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {/* Cavity Head Section */}
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f5f5f5', 
                   fontWeight: 'bold',
                   fontSize: '1.2rem',
@@ -776,7 +1311,7 @@ export default function Calculator() {
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f9f9f9', 
                   fontWeight: 'bold',
                   fontSize: '1.1rem',
@@ -808,8 +1343,6 @@ export default function Calculator() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{item.width}</TableCell>
-                  <TableCell align="right">{item.thickness}</TableCell>
                   <TableCell align="right">
                     <Checkbox
                       checked={state.cutItems[item.description] || false}
@@ -819,7 +1352,7 @@ export default function Calculator() {
                 </TableRow>
               ))}
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f9f9f9', 
                   fontWeight: 'bold',
                   fontSize: '1.1rem',
@@ -851,8 +1384,6 @@ export default function Calculator() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{item.width}</TableCell>
-                  <TableCell align="right">{item.thickness}</TableCell>
                   <TableCell align="right">
                     <Checkbox
                       checked={state.cutItems[item.description] || false}
@@ -861,19 +1392,17 @@ export default function Calculator() {
                   </TableCell>
                 </TableRow>
               ))}
-
               {/* Divider between sections */}
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   height: '40px',
                   borderBottom: '4px solid #e0e0e0',
                   bgcolor: '#fafafa'
                 }}></TableCell>
               </TableRow>
-
               {/* Cavity Pocket Section */}
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f5f5f5', 
                   fontWeight: 'bold',
                   fontSize: '1.2rem',
@@ -886,7 +1415,7 @@ export default function Calculator() {
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f9f9f9', 
                   fontWeight: 'bold',
                   fontSize: '1.1rem',
@@ -918,8 +1447,6 @@ export default function Calculator() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{item.width}</TableCell>
-                  <TableCell align="right">{item.thickness}</TableCell>
                   <TableCell align="right">
                     <Checkbox
                       checked={state.cutItems[item.description] || false}
@@ -929,7 +1456,7 @@ export default function Calculator() {
                 </TableRow>
               ))}
               <TableRow>
-                <TableCell colSpan={6} sx={{ 
+                <TableCell colSpan={4} sx={{ 
                   bgcolor: '#f9f9f9', 
                   fontWeight: 'bold',
                   fontSize: '1.1rem',
@@ -961,8 +1488,6 @@ export default function Calculator() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{item.width}</TableCell>
-                  <TableCell align="right">{item.thickness}</TableCell>
                   <TableCell align="right">
                     <Checkbox
                       checked={state.cutItems[item.description] || false}
@@ -979,111 +1504,545 @@ export default function Calculator() {
   };
 
   const handlePrint = () => {
-    // Get cut list items from the render function since it's already organized
-    const cutListData = calculateCutList();
-    const headAluminiumItems = cutListData.filter(item => 
-      item.description.includes('Head') && !item.description.includes('Timber')
-    );
-    const headTimberItems = cutListData.filter(item => 
-      item.description.includes('Head') && item.description.includes('Timber')
-    );
-    const pocketAluminiumItems = cutListData.filter(item => 
-      !item.description.includes('Head') && !item.description.includes('Timber')
-    );
-    const pocketTimberItems = cutListData.filter(item => 
-      !item.description.includes('Head') && item.description.includes('Timber')
-    );
-    
-    // Create a new window for printing
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!state.packingSlip || !state.orderNumber) {
+      alert('Packing Slip Number and Order Number are required.');
+      return;
+    }
 
-    // Generate the print content
-    const content = `
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups for this website');
+      return;
+    }
+
+    const cutList = calculateCutList();
+    // Use the same grouping as renderCutList
+    const cavityHeadItems = cutList.filter(item => 
+      item.description.includes('Head Track') || 
+      item.description.includes('Head Timber') ||
+      item.description.includes('Head Jamb')
+    );
+    const cavityPocketItems = cutList.filter(item => 
+      !item.description.includes('Head') && 
+      !item.description.includes('Timber')
+    );
+    const cavityHeadAluminium = cavityHeadItems.filter(item => 
+      item.description.includes('Aluminium') || 
+      item.description.includes('Track')
+    );
+    const cavityHeadTimber = cavityHeadItems.filter(item => 
+      !item.description.includes('Aluminium') &&
+      !item.description.includes('Track')
+    );
+    const cavityPocketAluminium = cavityPocketItems.filter(item => 
+      item.description.includes('Aluminium') || 
+      item.description.includes('Frontstay') ||
+      item.description.includes('Backstay') ||
+      item.description.includes('Baseplate')
+    );
+    const cavityPocketTimber = cavityPocketItems.filter(item => 
+      !item.description.includes('Aluminium') &&
+      !item.description.includes('Frontstay') &&
+      !item.description.includes('Backstay') &&
+      !item.description.includes('Baseplate')
+    );
+    const heading = generateHeading();
+
+    const printContent = `
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>Cavity Slider Cut List</title>
+          <title>Cut List</title>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; }
+            @page {
+              size: A4;
+              margin: 0;
+            }
+            body {
+              font-family: Arial, sans-serif;
+              margin: 0;
+              padding: 0;
+            }
+            .cutlist-container {
+              border: 2px solid black;
+              min-height: 100vh;
+              box-sizing: border-box;
+              padding: 40px 20px 20px 20px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 20px;
+              border-bottom: 2px solid black;
+              padding-bottom: 10px;
+            }
+            .main-title {
+              font-size: 32px;
+              font-weight: bold;
+              margin-bottom: 15px;
+              padding-top: 20px;
+            }
+            .cavity-title {
+              font-size: 20px;
+              font-weight: bold;
+              margin-bottom: 20px;
+            }
+            .order-info {
+              margin-bottom: 20px;
+              font-size: 14px;
+              display: flex;
+              justify-content: center;
+              align-items: flex-start;
+              gap: 40px;
+              padding: 0 20px;
+            }
+            .order-info-column {
+              text-align: center;
+              min-width: 150px;
+            }
+            .barcode-container {
+              margin-top: 5px;
+              text-align: center;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th, td {
+              border: 1px solid #ddd;
+              padding: 8px;
+              text-align: left;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+            }
             .section-header { 
               background-color: #f5f5f5; 
               font-weight: bold; 
-              font-size: 1.2rem; 
+              font-size: 16px;
               padding: 10px;
+              border: 1px solid #ddd;
             }
             .sub-header { 
               background-color: #f9f9f9; 
               font-weight: bold;
-              padding: 8px;
-              padding-left: 20px;
+              font-size: 14px;
+              padding: 8px 8px 8px 20px;
+              border: 1px solid #ddd;
+            }
+            .checkbox {
+              width: 20px;
+              height: 20px;
+              border: 1px solid #000;
+              display: inline-block;
+              margin: 0 auto;
             }
             @media print {
-              .no-print { display: none; }
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .checkbox {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .cutlist-container {
+                border: 2px solid black;
+                min-height: 100vh;
+              }
             }
           </style>
         </head>
         <body>
-          <h1>Cavity Slider Cut List</h1>
-          <p><strong>${generateHeading()}</strong></p>
+          <div class="cutlist-container">
+            <div class="header">
+              <div class="main-title">Cowdroy Cutlist</div>
+              <div class="cavity-title">${heading}</div>
+              <div style="font-size: 1.1rem; font-weight: 500; margin-bottom: 12px;">Floor Clearance: ${state.floorClearance}mm</div>
+              <div class="order-info">
+                <div class="order-info-column">
+                  <strong>Customer:</strong><br>
+                  ${state.customerName || 'N/A'}
+                </div>
+                <div class="order-info-column">
+                  <strong>Packing Slip:</strong><br>
+                  ${state.packingSlip}
+                  <div class="barcode-container">
+                    <svg id="packingSlipBarcode"></svg>
+                  </div>
+                </div>
+                <div class="order-info-column">
+                  <strong>Order Number:</strong><br>
+                  ${state.orderNumber}
+                  <div class="barcode-container">
+                    <svg id="orderNumberBarcode"></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
           <table>
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Quantity</th>
-                <th>Length (mm)</th>
-                <th>Width (mm)</th>
-                <th>Thickness (mm)</th>
+                  <th style="text-align: center">Quantity</th>
+                  <th style="text-align: center">Length (mm)</th>
+                  <th style="text-align: center">Cut</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td colspan="5" class="section-header">Cavity Head</td></tr>
-              <tr><td colspan="5" class="sub-header">Aluminium Components</td></tr>
-              ${headAluminiumItems.map((item: CutListItem) => `
+                <tr>
+                  <td colspan="4" class="section-header">Cavity Head</td>
+                </tr>
+                <tr>
+                  <td colspan="4" class="sub-header">Aluminium Components</td>
+                </tr>
+                ${cavityHeadAluminium.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>${item.length}</td>
-                  <td>${item.width}</td>
-                  <td>${item.thickness}</td>
+                    <td style="text-align: center">${item.quantity}</td>
+                    <td style="text-align: center">${item.length}</td>
+                    <td style="text-align: center"><div class="checkbox"></div></td>
                 </tr>
               `).join('')}
-              <tr><td colspan="5" class="sub-header">Timber Components</td></tr>
-              ${headTimberItems.map((item: CutListItem) => `
+                <tr>
+                  <td colspan="4" class="sub-header">Timber Components</td>
+                </tr>
+                ${cavityHeadTimber.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>${item.length}</td>
-                  <td>${item.width}</td>
-                  <td>${item.thickness}</td>
+                    <td style="text-align: center">${item.quantity}</td>
+                    <td style="text-align: center">${item.length}</td>
+                    <td style="text-align: center"><div class="checkbox"></div></td>
                 </tr>
               `).join('')}
-              <tr><td colspan="5" class="section-header">Cavity Pocket</td></tr>
-              <tr><td colspan="5" class="sub-header">Aluminium Components</td></tr>
-              ${pocketAluminiumItems.map((item: CutListItem) => `
+                <tr>
+                  <td colspan="4" class="section-header">Cavity Pocket</td>
+                </tr>
+                <tr>
+                  <td colspan="4" class="sub-header">Aluminium Components</td>
+                </tr>
+                ${cavityPocketAluminium.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>${item.length}</td>
-                  <td>${item.width}</td>
-                  <td>${item.thickness}</td>
+                    <td style="text-align: center">${item.quantity}</td>
+                    <td style="text-align: center">${item.length}</td>
+                    <td style="text-align: center"><div class="checkbox"></div></td>
                 </tr>
               `).join('')}
-              <tr><td colspan="5" class="sub-header">Timber Components</td></tr>
-              ${pocketTimberItems.map((item: CutListItem) => `
+                <tr>
+                  <td colspan="4" class="sub-header">Timber Components</td>
+                </tr>
+                ${cavityPocketTimber.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>${item.length}</td>
-                  <td>${item.width}</td>
-                  <td>${item.thickness}</td>
+                    <td style="text-align: center">${item.quantity}</td>
+                    <td style="text-align: center">${item.length}</td>
+                    <td style="text-align: center"><div class="checkbox"></div></td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
-          <button class="no-print" onclick="window.print()" style="margin-top: 20px; padding: 10px 20px;">Print</button>
+          </div>
+          <script>
+            window.onload = function() {
+              JsBarcode("#packingSlipBarcode", "${state.packingSlip}", {
+                format: "CODE128",
+                width: 1.5,
+                height: 40,
+                displayValue: false
+              });
+              JsBarcode("#orderNumberBarcode", "${state.orderNumber}", {
+                format: "CODE128",
+                width: 1.5,
+                height: 40,
+                displayValue: false
+              });
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+  };
+
+  const handlePrintLabel = () => {
+    if (!state.customerName || !state.packingSlip || !state.orderNumber) {
+      alert('Customer Name, Packing Slip Number, and Order Number are required.');
+      return;
+    }
+    // Create a new window for printing the label
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    // Generate the label content
+    const content = `
+      <html>
+        <head>
+          <title>Product Label</title>
+          <style>
+            body {
+              font-family: 'Arial', sans-serif;
+              margin: 0;
+              padding: 0;
+              background: #fff;
+            }
+            .label-main {
+              border: 2px solid #111;
+              width: 600px;
+              margin: 20px auto;
+              background: #fff;
+              box-sizing: border-box;
+              padding: 0;
+            }
+            .label-header {
+              display: flex;
+              border-bottom: 2px solid #111;
+            }
+            .label-header-left {
+              flex: 2;
+              padding: 20px 20px 10px 20px;
+              text-align: center;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+            }
+            .label-header-title {
+              font-size: 2.5rem;
+              font-weight: bold;
+              letter-spacing: 1px;
+              margin-bottom: 0.2em;
+              display: inline-block;
+              line-height: 1.1;
+            }
+            .label-header-sub {
+              font-size: 2.2rem;
+              font-weight: 300;
+              margin-top: 0.2em;
+              color: #222;
+              letter-spacing: 1px;
+            }
+            .label-header-right {
+              flex: 1;
+              background: #111;
+              color: #fff;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              padding: 0 10px;
+            }
+            .stud-value {
+              font-size: 3.5rem;
+              font-weight: bold;
+              margin: 0;
+              line-height: 1.1;
+            }
+            .stud-label {
+              font-size: 1.5rem;
+              font-weight: bold;
+              letter-spacing: 2px;
+              margin: 0;
+            }
+            .label-row {
+              display: flex;
+              border-bottom: 2px solid #111;
+              align-items: stretch;
+            }
+            .label-cell {
+              flex: 1;
+              padding: 0;
+              font-size: 1.3rem;
+              border-right: 2px solid #111;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              text-align: center;
+              height: 120px;
+            }
+            .label-cell:last-child {
+              border-right: none;
+            }
+            .label-info-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 18px 24px 0 24px;
+              font-size: 1.4rem;
+            }
+            .label-info-row .label-info {
+              flex: 1;
+              text-align: left;
+            }
+            .label-info-row .label-info + .label-info {
+              text-align: right;
+            }
+            .label-info-value {
+              font-size: 2.5rem;
+              font-weight: bold;
+              display: inline-block;
+              margin-bottom: 18px;
+            }
+            .label-footer {
+              padding: 18px 24px 18px 24px;
+              font-size: 1.4rem;
+              border-top: 2px solid #111;
+              border-bottom: 2px solid #111;
+              margin-bottom: 10px;
+            }
+            .label-footer-value {
+              font-size: 2rem;
+              font-weight: bold;
+              display: inline-block;
+              margin-top: 0.2em;
+            }
+            .label-footer-company {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+              margin-top: 16px;
+              gap: 24px;
+              padding: 12px 24px 12px 24px;
+            }
+            .company-info {
+              font-size: 1.05rem;
+              text-align: left;
+              color: #111;
+              padding: 8px 0 8px 0;
+            }
+            .company-logo {
+              max-width: 180px;
+              max-height: 60px;
+              object-fit: contain;
+              margin-left: auto;
+              display: block;
+            }
+            @media print {
+              .no-print { display: none; }
+              @page { margin: 0; }
+              body { margin: 0; }
+            }
+          </style>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+        </head>
+        <body>
+          <div class="label-main">
+            <!-- Logo at the very top -->
+            <div style="width:100%;background:#fff;text-align:center;padding:12px 0 8px 0;">
+              <img src="/logo.png" alt="Cowdroy Logo" style="max-width:320px;max-height:70px;width:auto;height:auto;display:inline-block;" />
+            </div>
+            <!-- Horizontal line below logo, full width, just above header -->
+            <div style="width:100%; height:2px; background:#111; margin:0 0 0 0;"></div>
+            <div class="label-header">
+              <div class="label-header-left">
+                <div class="label-header-title">
+                  ${state.cavityType.startsWith('Double') ? 'Double' : 'Single'}
+                  ${['Ultra', 'Ultra Heavy Duty'].includes(state.trackType) ? 'Ultra' : 'Optimiser'}
+                </div><br/>
+                <div class="label-header-sub">Cavity Slider</div>
+              </div>
+              <div class="label-header-right">
+                <div class="stud-value">${state.studSize.replace('mm','')}</div>
+                <div class="stud-label">STUD</div>
+              </div>
+            </div>
+            <div class="label-info-row" style="justify-content: center; align-items: center;">
+              <div class="label-info" style="text-align:center; width: 50%;">
+                <div style="font-size:1.5rem; font-weight:500;">Door Height:</div>
+                <div class="label-info-value" style="font-size:2.5rem; font-weight:bold;">${state.doorHeight}mm</div>
+              </div>
+              <div class="label-info" style="text-align:center; width: 50%;">
+                <div style="font-size:1.5rem; font-weight:500;">Door Width:</div>
+                <div class="label-info-value" style="font-size:2.5rem; font-weight:bold;">${state.doorWidth}mm</div>
+              </div>
+            </div>
+            <div class="label-footer" style="text-align:center;">
+              <div style="font-size:1.5rem; font-weight:500;">Floor Clearance:</div>
+              <span class="label-footer-value" style="font-size:2rem; font-weight:bold;">${state.floorClearance}mm</span>
+            </div>
+            <!-- Selected Options Section at the bottom (only if any selected) -->
+            ${
+              state.straightline || state.noClosingJamb || state.fullHeightDetail || state.squareStop || state.plyPanel || state.braced
+                ? `<div style="padding: 12px 24px 18px 24px;">
+                    <div style="font-size: 1.2rem; font-weight: 500; margin-bottom: 4px;">Selected Options:</div>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                      ${state.straightline ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Straightline</li>' : ''}
+                      ${state.noClosingJamb ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; No Closing Jamb</li>' : ''}
+                      ${state.fullHeightDetail ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Full Height Detail</li>' : ''}
+                      ${state.squareStop ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Square Stop</li>' : ''}
+                      ${state.plyPanel ? `<li style=\\\\"margin-bottom: 4px; font-size: 1.1rem;\\\\">&#x2611; Ply Panel (${state.plyPanelSide} side)</li>` : ''}
+                      ${state.braced ? `<li style=\\\\"margin-bottom: 4px; font-size: 1.1rem;\\\\">&#x2611; Braced (${state.bracedSide} side)</li>` : ''}
+                    </ul>
+                  </div>
+                  <div style="width:100%; height:2px; background:#111; margin:0 0 0 0;"></div>`
+                : ''
+            }
+            <!-- Customer Name, Packing Slip, and Order Number with barcodes at the bottom above company info -->
+            <div style="padding: 12px 24px 0 24px; text-align:center;">
+              <div style="font-size:2rem; font-weight:900; margin-bottom:10px; letter-spacing:1px;">${state.customerName}</div>
+              <div style="display:flex; justify-content:center; align-items:flex-end; gap:60px; margin-bottom:8px;">
+                <div style="text-align:center;">
+                  <div style="font-size:1.1rem; font-weight:500;">Packing Slip:</div>
+                  <div style="font-size:1.2rem; font-weight:400;">${state.packingSlip || '&mdash;'}</div>
+                  <svg id="packingSlipBarcode" style="display:block; margin:8px auto 0 auto; padding:0;"></svg>
+                </div>
+                <div style="text-align:center;">
+                  <div style="font-size:1.1rem; font-weight:500;">Order Number:</div>
+                  <div style="font-size:1.2rem; font-weight:400;">${state.orderNumber || '&mdash;'}</div>
+                  <svg id="orderNumberBarcode" style="display:block; margin:8px auto 0 auto; padding:0;"></svg>
+                </div>
+              </div>
+            </div>
+            <!-- Manufacture Date and Company Info Footer -->
+            <div style="text-align:center; font-size:1.08rem; font-weight:500; margin-top:0; margin-bottom:0;">Manufacture Date: ${new Date().toLocaleDateString('en-NZ')}</div>
+            <div style="background:#111;color:#fff;text-align:center;padding:14px 24px 14px 24px;font-size:1.08rem;font-weight:400;letter-spacing:0.5px; border-bottom-left-radius:2px; border-bottom-right-radius:2px; margin-top:0; margin-bottom:0;">
+               <div style="font-size:1.08rem; font-weight:400; margin-bottom:4px;">Manufactured in New Zealand By</div>
+               <div style="font-size:1.15rem; font-weight:600;">Cowdroy Products LTD - Christchurch</div>
+               <div>19 Kilronan Place, Wigram, Christchurch 8042</div>
+               <div>Phone 03 943 2060</div>
+               <div style="margin-top:6px; font-size:1.08rem; font-weight:400;">www.cowdroy.co.nz</div>
+            </div>
++           ${
+              state.straightline || state.noClosingJamb || state.fullHeightDetail || state.squareStop || state.plyPanel || state.braced
+                ? `<div style="padding: 12px 24px 18px 24px;">
+                    <div style="font-size: 1.2rem; font-weight: 500; margin-bottom: 4px;">Selected Options:</div>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                      ${state.straightline ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Straightline</li>' : ''}
+                      ${state.noClosingJamb ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; No Closing Jamb</li>' : ''}
+                      ${state.fullHeightDetail ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Full Height Detail</li>' : ''}
+                      ${state.squareStop ? '<li style=\\"margin-bottom: 4px; font-size: 1.1rem;\\">&#x2611; Square Stop</li>' : ''}
+                      ${state.plyPanel ? `<li style=\\\\"margin-bottom: 4px; font-size: 1.1rem;\\\\">&#x2611; Ply Panel (${state.plyPanelSide} side)</li>` : ''}
+                      ${state.braced ? `<li style=\\\\"margin-bottom: 4px; font-size: 1.1rem;\\\\">&#x2611; Braced (${state.bracedSide} side)</li>` : ''}
+                    </ul>
+                  </div>
+                  <div style="width:100%; height:2px; background:#111; margin:0 0 0 0;"></div>`
+                : ''
+            }
+            <!-- Build finishing options list -->
+            <div class="finishing-options" style="margin: 28px 0 0 0; text-align: center;">
+              <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 6px;">Finishing Options:</div>
+              <ul style="list-style: none; padding: 0; margin: 0; display: inline-block; text-align: left;">
+                ${['Straightline', 'No Closing Jamb', 'Full Height Detail', 'Square Stop', `Ply Panel (${state.plyPanelSide === 'both' ? 'Both Sides' : state.plyPanelSide.charAt(0).toUpperCase() + state.plyPanelSide.slice(1) + ' Side'})`, `Braced (${state.bracedSide === 'both' ? 'Both Sides' : state.bracedSide.charAt(0).toUpperCase() + state.bracedSide.slice(1) + ' Side'})`].map(opt => `<li style='font-size: 1.05rem; margin-bottom: 2px;'>${opt}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              if (window.JsBarcode) {
+                JsBarcode('#packingSlipBarcode', '${state.packingSlip || '0'}', { format: 'CODE128', displayValue: false, height: 50, width: 2 });
+                JsBarcode('#orderNumberBarcode', '${state.orderNumber || '0'}', { format: 'CODE128', displayValue: false, height: 50, width: 2 });
+              }
+            };
+          </script>
+          <button class="no-print" onclick="window.print()" style="margin: 20px auto; display: block; padding: 10px 20px; font-size: 1.2rem;">Print Label</button>
         </body>
       </html>
     `;
@@ -1101,6 +2060,48 @@ export default function Calculator() {
       <Typography variant="subtitle1" gutterBottom align="center" sx={{ mb: 4 }}>
         Calculate precise measurements for your cavity sliders
       </Typography>
+
+      {/* Dynamic Heading */}
+      <Typography 
+        variant="h5" 
+        align="center" 
+        sx={{ mb: 4, fontWeight: 'medium' }}
+        dangerouslySetInnerHTML={{ __html: generateHeading() }}
+      />
+
+      {/* Packing Slip and Order Number Fields (now between heading and main options) */}
+      <Box sx={{ mb: 4, display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <TextField
+          label="Customer Name"
+          name="customerName"
+          value={state.customerName}
+          onChange={handleInputChange}
+          sx={{ minWidth: 250 }}
+          required
+          error={!state.customerName}
+          helperText={!state.customerName ? 'Required' : ''}
+        />
+        <TextField
+          label="Packing Slip Number"
+          name="packingSlip"
+          value={state.packingSlip}
+          onChange={handleInputChange}
+          sx={{ minWidth: 250 }}
+          required
+          error={!state.packingSlip}
+          helperText={!state.packingSlip ? 'Required' : ''}
+        />
+        <TextField
+          label="Order Number"
+          name="orderNumber"
+          value={state.orderNumber}
+          onChange={handleInputChange}
+          sx={{ minWidth: 250 }}
+          required
+          error={!state.orderNumber}
+          helperText={!state.orderNumber ? 'Required' : ''}
+        />
+      </Box>
 
       {/* Preview Section */}
       <Box sx={{ mb: 4 }}>
@@ -1128,14 +2129,6 @@ export default function Calculator() {
         </Collapse>
       </Box>
 
-      {/* Dynamic Heading */}
-      <Typography 
-        variant="h5" 
-        align="center" 
-        sx={{ mb: 4, fontWeight: 'medium' }}
-        dangerouslySetInnerHTML={{ __html: generateHeading() }}
-      />
-
       {/* Calculator Form */}
       <Box sx={{ mb: 4 }}>
         <Grid container spacing={3}>
@@ -1159,7 +2152,7 @@ export default function Calculator() {
                 name="cavityType"
                 value={state.cavityType}
                 label="Cavity Type"
-                onChange={handleChange}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="Single">Single</MenuItem>
                 <MenuItem value="Double (Biparting)">Double (Biparting)</MenuItem>
@@ -1174,7 +2167,7 @@ export default function Calculator() {
                 name="studSize"
                 value={state.studSize}
                 label="Stud Size"
-                onChange={handleChange}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="69mm">69mm</MenuItem>
                 <MenuItem value="90mm">90mm</MenuItem>
@@ -1192,7 +2185,7 @@ export default function Calculator() {
                 name="trackType"
                 value={state.trackType}
                 label="Track Type"
-                onChange={handleChange}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="Triumph">Triumph</MenuItem>
                 <MenuItem value="Ultra">Ultra</MenuItem>
@@ -1208,17 +2201,7 @@ export default function Calculator() {
                 name="jambType"
                 value={state.jambType}
                 label="Jamb Type"
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  setState(prev => ({
-                    ...prev,
-                    jambType: newValue,
-                    // Set squareStop based on the selected jamb type
-                    squareStop: newValue === 'Square Stop',
-                    // If square stop is selected, force Un-Finned Stabiline
-                    frontstayOption: newValue === 'Square Stop' ? 'Un-Finned Stabiline' : prev.frontstayOption
-                  }));
-                }}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="Flat Pine">Flat Pine</MenuItem>
                 <MenuItem value="Grooved Pine">Grooved Pine</MenuItem>
@@ -1234,7 +2217,7 @@ export default function Calculator() {
                 name="frontstayOption"
                 value={state.frontstayOption}
                 label="Frontstay Options"
-                onChange={handleChange}
+                onChange={handleSelectChange}
                 disabled={state.squareStop}
               >
                 <MenuItem value="Heavy Duty">Heavy Duty</MenuItem>
@@ -1260,7 +2243,7 @@ export default function Calculator() {
                 name="heightCalculationMethod"
                 value={state.heightCalculationMethod}
                 label="Calculate Door Height By"
-                onChange={handleChange}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="doorHeight">Door Height</MenuItem>
                 <MenuItem value="floorToUnderHeadJamb">Floor to Under Head Jamb</MenuItem>
@@ -1290,7 +2273,7 @@ export default function Calculator() {
                 name="widthCalculationMethod"
                 value={state.widthCalculationMethod}
                 label="Calculate Door Width By"
-                onChange={handleChange}
+                onChange={handleSelectChange}
               >
                 <MenuItem value="doorWidth">Door Width</MenuItem>
                 <MenuItem value="betweenJambs">Between Jambs</MenuItem>
@@ -1371,6 +2354,14 @@ export default function Calculator() {
               />
               <FormControlLabel
                 control={<Checkbox 
+                  checked={state.squareStop}
+                  onChange={handleCheckboxChange}
+                  name="squareStop"
+                />}
+                label="Square Stop"
+              />
+              <FormControlLabel
+                control={<Checkbox 
                   checked={state.plyPanel}
                   onChange={handleCheckboxChange}
                   name="plyPanel"
@@ -1383,7 +2374,7 @@ export default function Calculator() {
                     row
                     name="plyPanelSide"
                     value={state.plyPanelSide}
-                    onChange={handleChange}
+                    onChange={handleInputChange}
                   >
                     <FormControlLabel value="left" control={<Radio />} label="Left Side" />
                     <FormControlLabel value="right" control={<Radio />} label="Right Side" />
@@ -1407,7 +2398,7 @@ export default function Calculator() {
                       row
                       name="bracedSide"
                       value={state.bracedSide}
-                      onChange={handleChange}
+                      onChange={handleInputChange}
                     >
                       <FormControlLabel value="left" control={<Radio />} label="Left Side" />
                       <FormControlLabel value="right" control={<Radio />} label="Right Side" />
@@ -1420,7 +2411,7 @@ export default function Calculator() {
                       row
                       name="floorType"
                       value={state.floorType}
-                      onChange={handleChange}
+                      onChange={handleInputChange}
                     >
                       <FormControlLabel value="Concrete" control={<Radio />} label="Concrete Floor" />
                       <FormControlLabel value="Timber" control={<Radio />} label="Timber Floor" />
@@ -1437,7 +2428,7 @@ export default function Calculator() {
       <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4, gap: 2 }}>
         <Button
           variant="contained"
-          color="error"
+          color="success"
           size="large"
           onClick={() => setState(defaultState)}
           startIcon={<Refresh />}
@@ -1470,6 +2461,17 @@ export default function Calculator() {
           }}
         >
           Print Cut List
+        </Button>
+      </Box>
+
+      {/* Print Buttons */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4 }}>
+        <Button
+          variant="outlined"
+          startIcon={<Print />}
+          onClick={handlePrintLabel}
+        >
+          Print Product Label
         </Button>
       </Box>
 

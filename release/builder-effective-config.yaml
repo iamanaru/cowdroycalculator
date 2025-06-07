@@ -1,0 +1,19 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.cavitycalculator.app
+productName: Cavity Calculator
+files:
+  - filter:
+      - dist/**/*
+      - electron-main.js
+win:
+  target:
+    - nsis
+  icon: public/logo.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+electronVersion: 29.3.0
